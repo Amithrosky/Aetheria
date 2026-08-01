@@ -1,10 +1,10 @@
-Aetheria Canvas
+> **Aetheria Canvas**
 
-Interactive Generative Art Playground & Mathematical Physics Visualizer
+_Interactive Generative Art Playground & Mathematical Physics Visualizer_
 
-Aetheria Canvas is a high-performance, browser-based generative art studio that transforms complex mathematical algorithms and physics simulations into fluid, real-time visual art. Designed with a celestial OLED dark-mode aesthetic, it provides digital artists, creative coders, and curious explorers with an intuitive playground for creating, customizing, and exporting high-resolution generative graphics.
 
-✦ Key Features & Capabilities
+
+**✦ Key Features & Capabilities**
 
 1. Multi-Engine Generative Mechanics
 
@@ -42,7 +42,7 @@ Presets & Local Storage: Save custom parameter states or choose from curated qui
 
 High-Res PNG Capture: Instantly export canvas state snapshots at full dynamic screen resolution with a single button press or keyboard shortcut (S).
 
-Keyboard Hotkeys:
+**Keyboard Hotkeys:**
 
 Space — Pause / Resume animation
 
@@ -52,7 +52,7 @@ S — Export PNG screenshot
 
 H — Toggle HUD settings panel visibility
 
-✦ Technical Specifications
+**✦ Technical Specifications**
 
 Technology Stack: HTML5, CSS3 (Tailwind CSS utilities), Vanilla JavaScript (ES6+ Class Architecture)
 
