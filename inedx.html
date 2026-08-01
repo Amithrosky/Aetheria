@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Aetheria Canvas | Interactive Generative Art Playground</title>
+  
+  <!-- Fonts: Outfit (Display), Inter (Body), JetBrains Mono (Telemetry) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            oled: '#050507',
+            surface: 'rgba(255, 255, 255, 0.04)',
+            'surface-hover': 'rgba(255, 255, 255, 0.08)',
+            cyanGlow: '#06b6d4',
+            magentaGlow: '#d946ef',
+            purpleGlow: '#8b5cf6',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root { color-scheme: dark; }
+    
+    body {
+      background-color: #050507;
+      color: #f3f4f6;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Subtle background radial tint */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.03) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Ultra-Light OLED Surface Panels (No GPU blur overhead) */
+    .ui-panel {
+      background-color: rgba(10, 11, 16, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    }
+
+    .ui-pill {
+      background-color: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.15s ease-in-out;
+    }
+    .ui-pill:hover {
+      background-color: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
+    /* Lightweight Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+
+    /* Custom Lightweight Range Sliders */
+    input[type=range] {
+      -webkit-appearance: none;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      height: 4px;
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 14px;
+      width: 14px;
+      border-radius: 50%;
+      background: #06b6d4;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    input[type=range]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      background: #22d3ee;
+    }
+
+    /* Hide scrollbar for top pills */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    @keyframes toastIn {
+      from { transform: translateY(10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .animate-toast { animation: toastIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden font-sans select-none antialiased">
+
+  <div class="ambient-bg"></div>
+
+  <!-- HTML5 Canvas -->
+  <canvas id="artCanvas" class="absolute inset-0 w-full h-full cursor-crosshair z-10 block"></canvas>
+
+  <!-- TOP COMPACT CONTROL BAR -->
+  <header class="fixed top-3 left-3 right-3 z-40 flex items-center justify-between gap-2 pointer-events-none">
+    
+    <!-- Left: Brand & Telemetry Pill -->
+    <div class="pointer-events-auto flex items-center gap-2">
+      <div class="ui-panel px-3 py-1.5 rounded-full flex items-center gap-3 text-xs font-mono">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="font-display font-bold text-white tracking-wider">AETHERIA</span>
+        </div>
+        <span class="text-white/20">|</span>
+        <div class="text-gray-300">
+          <span id="fpsCounter" class="text-white font-bold">60</span> <span class="text-gray-500 text-[10px]">FPS</span>
+        </div>
+        <span class="text-white/20 hidden sm:inline">|</span>
+        <div class="text-gray-300 hidden sm:block">
+          <span id="particleCounter" class="text-cyan-400 font-bold">3000</span> <span class="text-gray-500 text-[10px]">PTS</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Quick Mode Selector Pills -->
+    <div class="pointer-events-auto hidden md:flex items-center gap-1.5 ui-panel p-1 rounded-full text-xs font-medium">
+      <button data-mode="1" class="mode-pill px-3 py-1 rounded-full text-cyan-300 bg-cyan-500/20 border border-cyan-500/30 transition-all">
+        Flow Field
+      </button>
+      <button data-mode="2" class="mode-pill px-3 py-1 rounded-full text-gray-400 hover:text-white transition-all">
+        Orbital Gravity
+      </button>
+      <button data-mode="3" class="mode-pill px-3 py-1 rounded-full text-gray-400 hover:text-white transition-all">
+        Lissajous
+      </button>
+    </div>
+
+    <!-- Right: Quick Actions & Settings Toggle -->
+    <div class="pointer-events-auto flex items-center gap-1.5">
+      <button id="btnPause" class="ui-pill p-2 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-gray-200 flex items-center gap-1.5" title="Pause/Play (Space)">
+        <svg id="pauseIcon" class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span id="pauseBtnText" class="hidden sm:inline">Pause</span>
+      </button>
+
+      <button id="btnReset" class="ui-pill p-2 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-gray-200 flex items-center gap-1.5" title="Reset Canvas (R)">
+        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        <span class="hidden sm:inline">Reset</span>
+      </button>
+
+      <button id="btnScreenshot" class="ui-pill p-2 sm:px-3 sm:py-1.5 rounded-full text-xs font-semibold text-cyan-300 border-cyan-500/30 flex items-center gap-1.5" title="Export PNG (S)">
+        <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h0.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg>
+        <span class="hidden sm:inline">Export</span>
+      </button>
+
+      <!-- Settings Drawer Toggle Button -->
+      <button id="toggleHudBtn" class="ui-panel p-2 rounded-full text-gray-200 hover:text-white transition-all active:scale-95" title="Settings (H)">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- LIGHTWEIGHT TABBED SETTINGS DRAWER -->
+  <aside id="hudPanel" class="fixed top-14 right-3 z-50 w-80 max-w-[calc(100vw-1.5rem)] ui-panel rounded-2xl p-4 flex flex-col gap-3 transition-all duration-200 opacity-0 pointer-events-none translate-y-[-8px]">
+    
+    <!-- Drawer Header & Tab Switcher -->
+    <div class="flex items-center justify-between pb-2 border-b border-white/10">
+      <div class="flex items-center gap-1 p-0.5 bg-black/40 rounded-lg text-xs font-medium">
+        <button data-tab="tab-physics" class="tab-btn px-2.5 py-1 rounded-md bg-white/10 text-white transition-all">Physics</button>
+        <button data-tab="tab-style" class="tab-btn px-2.5 py-1 rounded-md text-gray-400 hover:text-white transition-all">Visuals</button>
+        <button data-tab="tab-presets" class="tab-btn px-2.5 py-1 rounded-md text-gray-400 hover:text-white transition-all">Presets</button>
+      </div>
+
+      <button id="closeHudBtn" class="text-gray-400 hover:text-white p-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+
+    <!-- TAB 1: PHYSICS CONTROLS -->
+    <div id="tab-physics" class="tab-content space-y-3.5">
+      <!-- Mode selector for mobile view -->
+      <div class="md:hidden space-y-1">
+        <label class="text-[11px] font-mono uppercase text-gray-400">Algorithm Engine</label>
+        <select id="mobileModeSelect" class="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-gray-200">
+          <option value="1">1. Simplex Flow Field</option>
+          <option value="2">2. Orbital Gravity Attractor</option>
+          <option value="3">3. Sacred Lissajous Curves</option>
+        </select>
+      </div>
+
+      <!-- Particle Count -->
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs">
+          <span class="text-gray-300">Particle Density</span>
+          <span id="valParticleCount" class="font-mono text-cyan-400">3000</span>
+        </div>
+        <input type="range" id="inputParticleCount" min="200" max="10000" step="100" value="3000" class="w-full">
+      </div>
+
+      <!-- Speed Multiplier -->
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs">
+          <span class="text-gray-300">Velocity Multiplier</span>
+          <span id="valSpeed" class="font-mono text-cyan-400">1.8</span>
+        </div>
+        <input type="range" id="inputSpeed" min="0.1" max="5.0" step="0.1" value="1.8" class="w-full">
+      </div>
+
+      <!-- Trail Decay -->
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs">
+          <span class="text-gray-300">Trail Persistence</span>
+          <span id="valDecay" class="font-mono text-cyan-400">88%</span>
+        </div>
+        <input type="range" id="inputDecay" min="0.01" max="0.4" step="0.01" value="0.12" class="w-full">
+      </div>
+
+      <!-- Noise Scale / Frequency -->
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs">
+          <span class="text-gray-300">Field Frequency</span>
+          <span id="valScale" class="font-mono text-cyan-400">0.003</span>
+        </div>
+        <input type="range" id="inputScale" min="0.0005" max="0.015" step="0.0005" value="0.003" class="w-full">
+      </div>
+    </div>
+
+    <!-- TAB 2: VISUAL & COLOR STYLING -->
+    <div id="tab-style" class="tab-content hidden space-y-3.5">
+      <!-- Particle Radius -->
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs">
+          <span class="text-gray-300">Particle Size</span>
+          <span id="valSize" class="font-mono text-cyan-400">1.5px</span>
+        </div>
+        <input type="range" id="inputSize" min="0.5" max="5.0" step="0.1" value="1.5" class="w-full">
+      </div>
+
+      <!-- Color Palette Select -->
+      <div class="space-y-1">
+        <label class="text-xs text-gray-300">Color Palette</label>
+        <select id="selectPalette" class="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500">
+          <option value="cyberpunk">Cyberpunk Neon</option>
+          <option value="aurora">Aurora Borealis</option>
+          <option value="celestial">Celestial Cosmic</option>
+          <option value="fire">Solar Plasma</option>
+          <option value="monochrome">Monochrome Silver</option>
+        </select>
+      </div>
+
+      <!-- Toggles -->
+      <div class="space-y-2 pt-1">
+        <label class="flex items-center justify-between cursor-pointer">
+          <span class="text-xs text-gray-300">Additive Glow Blending</span>
+          <input type="checkbox" id="toggleGlow" class="sr-only peer" checked>
+          <div class="w-8 h-4 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500 relative"></div>
+        </label>
+
+        <label class="flex items-center justify-between cursor-pointer">
+          <span class="text-xs text-gray-300">Proximity Mesh Lines</span>
+          <input type="checkbox" id="toggleLines" class="sr-only peer">
+          <div class="w-8 h-4 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-magentaGlow relative"></div>
+        </label>
+      </div>
+    </div>
+
+    <!-- TAB 3: PRESETS & USER SAVES -->
+    <div id="tab-presets" class="tab-content hidden space-y-3">
+      <div class="grid grid-cols-2 gap-1.5">
+        <button data-preset="quantum" class="preset-btn px-2.5 py-2 rounded-lg text-xs font-medium ui-pill text-left text-gray-200 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span> Quantum
+        </button>
+        <button data-preset="hyperspace" class="preset-btn px-2.5 py-2 rounded-lg text-xs font-medium ui-pill text-left text-gray-200 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-magentaGlow"></span> Hyperspace
+        </button>
+        <button data-preset="nebula" class="preset-btn px-2.5 py-2 rounded-lg text-xs font-medium ui-pill text-left text-gray-200 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span> Nebula
+        </button>
+        <button data-preset="sacred" class="preset-btn px-2.5 py-2 rounded-lg text-xs font-medium ui-pill text-left text-gray-200 flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Harmonic
+        </button>
+      </div>
+
+      <button id="btnSavePreset" class="w-full px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-xs font-semibold text-purple-300 transition-all flex items-center justify-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+        <span>Save Custom State</span>
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- BOTTOM HOTKEY BAR -->
+  <div class="fixed bottom-3 left-1/2 -translate-x-1/2 z-30 ui-panel px-3.5 py-1.5 rounded-full hidden md:flex items-center gap-3 text-[11px] font-mono text-gray-400 pointer-events-none">
+    <div><kbd class="px-1 py-0.5 rounded bg-white/10 text-gray-200">SPACE</kbd> Pause</div>
+    <div><kbd class="px-1 py-0.5 rounded bg-white/10 text-gray-200">R</kbd> Reset</div>
+    <div><kbd class="px-1 py-0.5 rounded bg-white/10 text-gray-200">S</kbd> Save PNG</div>
+    <div><kbd class="px-1 py-0.5 rounded bg-white/10 text-gray-200">H</kbd> Settings</div>
+    <div><kbd class="px-1 py-0.5 rounded bg-white/10 text-gray-200">CLICK</kbd> Attract</div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toastContainer" class="fixed bottom-4 left-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script>
+    /**
+     * AETHERIA GENERATIVE ENGINE (LIGHTWEIGHT ES6 ARCHITECTURE)
+     */
+
+    class SimplexNoise {
+      constructor() {
+        this.grad3 = [
+          [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+          [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+          [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+        ];
+        this.p = [];
+        for (let i = 0; i < 256; i++) {
+          this.p[i] = Math.floor(Math.random() * 256);
+        }
+        this.perm = new Array(512);
+        this.permMod12 = new Array(512);
+        for (let i = 0; i < 512; i++) {
+          this.perm[i] = this.p[i & 255];
+          this.permMod12[i] = (this.perm[i] % 12);
+        }
+      }
+
+      noise2D(xin, yin) {
+        let n0, n1, n2;
+        const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+        const s = (xin + yin) * F2;
+        const i = Math.floor(xin + s);
+        const j = Math.floor(yin + s);
+        const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+        const t = (i + j) * G2;
+        const X0 = i - t;
+        const Y0 = j - t;
+        const x0 = xin - X0;
+        const y0 = yin - Y0;
+
+        let i1, j1;
+        if (x0 > y0) { i1 = 1; j1 = 0; }
+        else { i1 = 0; j1 = 1; }
+
+        const x1 = x0 - i1 + G2;
+        const y1 = y0 - j1 + G2;
+        const x2 = x0 - 1.0 + 2.0 * G2;
+        const y2 = y0 - 1.0 + 2.0 * G2;
+
+        const ii = i & 255;
+        const jj = j & 255;
+        const gi0 = this.permMod12[ii + this.perm[jj]];
+        const gi1 = this.permMod12[ii + i1 + this.perm[jj + j1]];
+        const gi2 = this.permMod12[ii + 1 + this.perm[jj + 1]];
+
+        let t0 = 0.5 - x0 * x0 - y0 * y0;
+        if (t0 < 0) n0 = 0.0;
+        else {
+          t0 *= t0;
+          n0 = t0 * t0 * (this.grad3[gi0][0] * x0 + this.grad3[gi0][1] * y0);
+        }
+
+        let t1 = 0.5 - x1 * x1 - y1 * y1;
+        if (t1 < 0) n1 = 0.0;
+        else {
+          t1 *= t1;
+          n1 = t1 * t1 * (this.grad3[gi1][0] * x1 + this.grad3[gi1][1] * y1);
+        }
+
+        let t2 = 0.5 - x2 * x2 - y2 * y2;
+        if (t2 < 0) n2 = 0.0;
+        else {
+          t2 *= t2;
+          n2 = t2 * t2 * (this.grad3[gi2][0] * x2 + this.grad3[gi2][1] * y2);
+        }
+
+        return 70.0 * (n0 + n1 + n2);
+      }
+    }
+
+    const PALETTES = {
+      cyberpunk: ['#06b6d4', '#d946ef', '#8b5cf6', '#3b82f6', '#ec4899'],
+      aurora: ['#10b981', '#06b6d4', '#3b82f6', '#059669', '#6366f1'],
+      celestial: ['#6366f1', '#a855f7', '#38bdf8', '#fbbf24', '#f43f5e'],
+      fire: ['#f59e0b', '#ef4444', '#f97316', '#facc15', '#b91c1c'],
+      monochrome: ['#ffffff', '#cbd5e1', '#94a3b8', '#64748b', '#334155']
+    };
+
+    class Particle {
+      constructor(canvasWidth, canvasHeight) {
+        this.reset(canvasWidth, canvasHeight);
+      }
+
+      reset(w, h) {
+        this.x = Math.random() * w;
+        this.y = Math.random() * h;
+        this.vx = 0;
+        this.vy = 0;
+        this.ax = 0;
+        this.ay = 0;
+        this.prevX = this.x;
+        this.prevY = this.y;
+        this.life = Math.random() * 200 + 100;
+        this.colorIndex = Math.floor(Math.random() * 5);
+        this.seed = Math.random() * 1000;
+      }
+
+      update(w, h, maxSpeed) {
+        this.prevX = this.x;
+        this.prevY = this.y;
+
+        this.vx += this.ax;
+        this.vy += this.ay;
+
+        const speed = Math.hypot(this.vx, this.vy);
+        if (speed > maxSpeed) {
+          this.vx = (this.vx / speed) * maxSpeed;
+          this.vy = (this.vy / speed) * maxSpeed;
+        }
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        this.vx *= 0.96;
+        this.vy *= 0.96;
+        this.ax = 0;
+        this.ay = 0;
+
+        this.life--;
+
+        if (this.x < 0 || this.x > w || this.y < 0 || this.y > h || this.life <= 0) {
+          this.reset(w, h);
+        }
+      }
+    }
+
+    class GenerativeEngine {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d', { alpha: false });
+        this.simplex = new SimplexNoise();
+
+        this.params = {
+          mode: 1,
+          particleCount: 3000,
+          speed: 1.8,
+          decay: 0.12,
+          scale: 0.003,
+          size: 1.5,
+          palette: 'cyberpunk',
+          glow: true,
+          drawLines: false
+        };
+
+        this.particles = [];
+        this.time = 0;
+        this.isPaused = false;
+        this.dpr = window.devicePixelRatio || 1;
+        this.mouse = { x: -1000, y: -1000, isPressed: false };
+
+        this.fps = 60;
+        this.frameCount = 0;
+        this.lastTime = performance.now();
+
+        this.init();
+      }
+
+      init() {
+        this.resize();
+        this.rebuildParticles();
+        this.bindEvents();
+      }
+
+      resize() {
+        this.width = window.innerWidth;
+        this.height = window.innerHeight;
+        this.canvas.width = this.width * this.dpr;
+        this.canvas.height = this.height * this.dpr;
+        this.ctx.scale(this.dpr, this.dpr);
+
+        this.ctx.fillStyle = '#050507';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+      }
+
+      rebuildParticles() {
+        const diff = this.params.particleCount - this.particles.length;
+        if (diff > 0) {
+          for (let i = 0; i < diff; i++) {
+            this.particles.push(new Particle(this.width, this.height));
+          }
+        } else if (diff < 0) {
+          this.particles.splice(this.params.particleCount);
+        }
+      }
+
+      bindEvents() {
+        window.addEventListener('resize', () => this.resize());
+
+        const updatePointer = (x, y) => {
+          this.mouse.x = x;
+          this.mouse.y = y;
+        };
+
+        this.canvas.addEventListener('mousemove', (e) => updatePointer(e.clientX, e.clientY));
+        this.canvas.addEventListener('mousedown', (e) => {
+          this.mouse.isPressed = true;
+          updatePointer(e.clientX, e.clientY);
+        });
+        window.addEventListener('mouseup', () => this.mouse.isPressed = false);
+
+        this.canvas.addEventListener('touchmove', (e) => {
+          if (e.touches.length > 0) updatePointer(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: true });
+
+        this.canvas.addEventListener('touchstart', (e) => {
+          if (e.touches.length > 0) {
+            this.mouse.isPressed = true;
+            updatePointer(e.touches[0].clientX, e.touches[0].clientY);
+          }
+        }, { passive: true });
+
+        window.addEventListener('touchend', () => this.mouse.isPressed = false);
+      }
+
+      updatePhysics() {
+        this.time += 0.005;
+
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+
+          if (this.params.mode === 1) {
+            const angle = this.simplex.noise2D(
+              p.x * this.params.scale, 
+              p.y * this.params.scale + this.time
+            ) * Math.PI * 4;
+
+            p.ax += Math.cos(angle) * 0.4;
+            p.ay += Math.sin(angle) * 0.4;
+
+          } else if (this.params.mode === 2) {
+            const targetX = this.mouse.x > 0 ? this.mouse.x : this.width / 2;
+            const targetY = this.mouse.y > 0 ? this.mouse.y : this.height / 2;
+
+            const dx = targetX - p.x;
+            const dy = targetY - p.y;
+            const dist = Math.hypot(dx, dy) + 10;
+            const force = (this.mouse.isPressed ? 1200 : 400) / (dist * dist);
+            
+            p.ax += (dx / dist) * force * 15;
+            p.ay += (dy / dist) * force * 15;
+            p.ax += (-dy / dist) * 0.8;
+            p.ay += (dx / dist) * 0.8;
+
+          } else if (this.params.mode === 3) {
+            const freqA = 3;
+            const freqB = 2;
+            const radius = Math.min(this.width, this.height) * 0.35;
+            const targetX = this.width / 2 + Math.sin(this.time * freqA + p.seed) * radius;
+            const targetY = this.height / 2 + Math.cos(this.time * freqB + p.seed * 0.5) * radius;
+
+            p.ax += (targetX - p.x) * 0.01;
+            p.ay += (targetY - p.y) * 0.01;
+          }
+
+          if (this.params.mode !== 2 && this.mouse.isPressed) {
+            const mdx = p.x - this.mouse.x;
+            const mdy = p.y - this.mouse.y;
+            const mdist = Math.hypot(mdx, mdy) + 1;
+            if (mdist < 250) {
+              const repelForce = (250 - mdist) / 250;
+              p.ax += (mdx / mdist) * repelForce * 5;
+              p.ay += (mdy / mdist) * repelForce * 5;
+            }
+          }
+
+          p.update(this.width, this.height, this.params.speed * 3);
+        }
+      }
+
+      render() {
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.fillStyle = `rgba(5, 5, 7, ${this.params.decay})`;
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        this.ctx.globalCompositeOperation = this.params.glow ? 'lighter' : 'source-over';
+
+        const activePalette = PALETTES[this.params.palette] || PALETTES.cyberpunk;
+
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+          const hexColor = activePalette[p.colorIndex % activePalette.length];
+
+          this.ctx.beginPath();
+          this.ctx.moveTo(p.prevX, p.prevY);
+          this.ctx.lineTo(p.x, p.y);
+
+          this.ctx.strokeStyle = hexColor;
+          this.ctx.lineWidth = this.params.size;
+          this.ctx.lineCap = 'round';
+          this.ctx.stroke();
+        }
+
+        if (this.params.drawLines && this.particles.length <= 4000) {
+          this.ctx.lineWidth = 0.5;
+          const maxDist = 45;
+          
+          for (let i = 0; i < this.particles.length; i += 2) {
+            const p1 = this.particles[i];
+            for (let j = i + 1; j < this.particles.length; j += 15) {
+              const p2 = this.particles[j];
+              const dx = p1.x - p2.x;
+              const dy = p1.y - p2.y;
+              const distSq = dx * dx + dy * dy;
+
+              if (distSq < maxDist * maxDist) {
+                const alpha = 1 - Math.sqrt(distSq) / maxDist;
+                this.ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.25})`;
+                this.ctx.beginPath();
+                this.ctx.moveTo(p1.x, p1.y);
+                this.ctx.lineTo(p2.x, p2.y);
+                this.ctx.stroke();
+              }
+            }
+          }
+        }
+      }
+
+      loop(now) {
+        if (!this.isPaused) {
+          this.updatePhysics();
+          this.render();
+        }
+
+        this.frameCount++;
+        if (now - this.lastTime >= 1000) {
+          this.fps = Math.round((this.frameCount * 1000) / (now - this.lastTime));
+          document.getElementById('fpsCounter').textContent = this.fps;
+          this.frameCount = 0;
+          this.lastTime = now;
+        }
+
+        requestAnimationFrame((time) => this.loop(time));
+      }
+
+      start() {
+        requestAnimationFrame((time) => this.loop(time));
+      }
+
+      reset() {
+        this.particles.forEach(p => p.reset(this.width, this.height));
+        this.ctx.fillStyle = '#050507';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const canvas = document.getElementById('artCanvas');
+      const engine = new GenerativeEngine(canvas);
+      engine.start();
+
+      const hudPanel = document.getElementById('hudPanel');
+      const toggleHudBtn = document.getElementById('toggleHudBtn');
+      const closeHudBtn = document.getElementById('closeHudBtn');
+
+      function showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `ui-panel px-3 py-1.5 rounded-full text-xs font-medium text-white flex items-center gap-2 animate-toast`;
+        
+        let iconColor = 'text-cyan-400';
+        if (type === 'success') iconColor = 'text-emerald-400';
+        if (type === 'warn') iconColor = 'text-amber-400';
+
+        toast.innerHTML = `<span class="${iconColor}">✦</span> ${message}`;
+        container.appendChild(toast);
+
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          toast.style.transition = 'opacity 0.2s ease';
+          setTimeout(() => toast.remove(), 200);
+        }, 2000);
+      }
+
+      // Sync Controls
+      function syncUI() {
+        document.getElementById('valParticleCount').textContent = engine.params.particleCount;
+        document.getElementById('particleCounter').textContent = engine.params.particleCount;
+        document.getElementById('valSpeed').textContent = parseFloat(engine.params.speed).toFixed(1);
+        document.getElementById('valDecay').textContent = `${Math.round((1 - engine.params.decay) * 100)}%`;
+        document.getElementById('valScale').textContent = engine.params.scale;
+        document.getElementById('valSize').textContent = `${engine.params.size}px`;
+
+        document.getElementById('inputParticleCount').value = engine.params.particleCount;
+        document.getElementById('inputSpeed').value = engine.params.speed;
+        document.getElementById('inputDecay').value = engine.params.decay;
+        document.getElementById('inputScale').value = engine.params.scale;
+        document.getElementById('inputSize').value = engine.params.size;
+        document.getElementById('selectPalette').value = engine.params.palette;
+        document.getElementById('toggleGlow').checked = engine.params.glow;
+        document.getElementById('toggleLines').checked = engine.params.drawLines;
+
+        document.querySelectorAll('.mode-pill').forEach(btn => {
+          const m = parseInt(btn.dataset.mode);
+          if (m === engine.params.mode) {
+            btn.className = 'mode-pill px-3 py-1 rounded-full text-cyan-300 bg-cyan-500/20 border border-cyan-500/30 transition-all';
+          } else {
+            btn.className = 'mode-pill px-3 py-1 rounded-full text-gray-400 hover:text-white transition-all';
+          }
+        });
+
+        document.getElementById('mobileModeSelect').value = engine.params.mode;
+      }
+
+      // Drawer Tab Switching
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => {
+            b.className = 'tab-btn px-2.5 py-1 rounded-md text-gray-400 hover:text-white transition-all';
+          });
+          btn.className = 'tab-btn px-2.5 py-1 rounded-md bg-white/10 text-white transition-all';
+
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+          document.getElementById(btn.dataset.tab).classList.remove('hidden');
+        });
+      });
+
+      // Physics inputs
+      document.getElementById('inputParticleCount').addEventListener('input', (e) => {
+        engine.params.particleCount = parseInt(e.target.value);
+        syncUI();
+        engine.rebuildParticles();
+      });
+
+      document.getElementById('inputSpeed').addEventListener('input', (e) => {
+        engine.params.speed = parseFloat(e.target.value);
+        syncUI();
+      });
+
+      document.getElementById('inputDecay').addEventListener('input', (e) => {
+        engine.params.decay = parseFloat(e.target.value);
+        syncUI();
+      });
+
+      document.getElementById('inputScale').addEventListener('input', (e) => {
+        engine.params.scale = parseFloat(e.target.value);
+        syncUI();
+      });
+
+      document.getElementById('inputSize').addEventListener('input', (e) => {
+        engine.params.size = parseFloat(e.target.value);
+        syncUI();
+      });
+
+      document.getElementById('selectPalette').addEventListener('change', (e) => {
+        engine.params.palette = e.target.value;
+        showToast(`Palette: ${e.target.value.toUpperCase()}`);
+      });
+
+      document.getElementById('toggleGlow').addEventListener('change', (e) => engine.params.glow = e.target.checked);
+      document.getElementById('toggleLines').addEventListener('change', (e) => engine.params.drawLines = e.target.checked);
+
+      // Mode Switchers
+      document.querySelectorAll('.mode-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+          engine.params.mode = parseInt(btn.dataset.mode);
+          syncUI();
+          showToast(`Engine Mode Changed`);
+        });
+      });
+
+      document.getElementById('mobileModeSelect').addEventListener('change', (e) => {
+        engine.params.mode = parseInt(e.target.value);
+        syncUI();
+      });
+
+      // Presets
+      const PRESETS = {
+        quantum: { mode: 1, particleCount: 4500, speed: 2.2, decay: 0.1, scale: 0.0025, size: 1.2, palette: 'cyberpunk', glow: true, drawLines: false },
+        hyperspace: { mode: 2, particleCount: 6000, speed: 3.5, decay: 0.05, scale: 0.005, size: 2.0, palette: 'aurora', glow: true, drawLines: false },
+        nebula: { mode: 2, particleCount: 3000, speed: 1.2, decay: 0.15, scale: 0.003, size: 1.8, palette: 'celestial', glow: true, drawLines: true },
+        sacred: { mode: 3, particleCount: 2500, speed: 1.5, decay: 0.08, scale: 0.002, size: 1.5, palette: 'fire', glow: true, drawLines: false }
+      };
+
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.preset;
+          if (PRESETS[key]) {
+            Object.assign(engine.params, PRESETS[key]);
+            engine.rebuildParticles();
+            syncUI();
+            showToast(`Applied Preset: ${btn.textContent.trim()}`, 'success');
+          }
+        });
+      });
+
+      // Actions
+      const togglePause = () => {
+        engine.isPaused = !engine.isPaused;
+        document.getElementById('pauseBtnText').textContent = engine.isPaused ? 'Resume' : 'Pause';
+        showToast(engine.isPaused ? 'Paused' : 'Resumed', 'warn');
+      };
+
+      document.getElementById('btnPause').addEventListener('click', togglePause);
+      document.getElementById('btnReset').addEventListener('click', () => {
+        engine.reset();
+        showToast('Canvas Reset');
+      });
+
+      document.getElementById('btnSavePreset').addEventListener('click', () => {
+        try {
+          localStorage.setItem('aetheria_preset', JSON.stringify(engine.params));
+          showToast('Saved Custom Preset!', 'success');
+        } catch (e) {}
+      });
+
+      document.getElementById('btnScreenshot').addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = `Aetheria-Art-${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showToast('PNG Exported!', 'success');
+      });
+
+      // HUD Toggle
+      let hudOpen = false;
+      const toggleHUD = () => {
+        hudOpen = !hudOpen;
+        if (hudOpen) {
+          hudPanel.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-[-8px]');
+        } else {
+          hudPanel.classList.add('opacity-0', 'pointer-events-none', 'translate-y-[-8px]');
+        }
+      };
+
+      toggleHudBtn.addEventListener('click', toggleHUD);
+      closeHudBtn.addEventListener('click', toggleHUD);
+
+      // Keyboard Shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+        if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+        else if (e.code === 'KeyR') { engine.reset(); showToast('Canvas Reset'); }
+        else if (e.code === 'KeyS') { document.getElementById('btnScreenshot').click(); }
+        else if (e.code === 'KeyH') { toggleHUD(); }
+      });
+
+      syncUI();
+    });
+  </script>
+</body>
+</html>
